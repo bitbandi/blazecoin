@@ -1,23 +1,22 @@
+// Copyright (c) 2011-2013 The Bitcoin developers
+// Distributed under the MIT/X11 software license, see the accompanying
+// file COPYING or http://www.opensource.org/licenses/mit-license.php.
+
 #include "signverifymessagedialog.h"
 #include "ui_signverifymessagedialog.h"
 
 #include "addressbookpage.h"
-#include "base58.h"
 #include "guiutil.h"
-#include "init.h"
-#include "main.h"
-#include "optionsmodel.h"
 #include "walletmodel.h"
-#include "wallet.h"
 
-#include <QClipboard>
+#include "base58.h"
+#include "init.h"
+#include "wallet.h"
 
 #include <string>
 #include <vector>
 
 #include <QClipboard>
-#include <QDesktopWidget>
-#include "dialog_move_handler.h"
 
 SignVerifyMessageDialog::SignVerifyMessageDialog(QWidget *parent) :
     QDialog(parent),
@@ -25,17 +24,9 @@ SignVerifyMessageDialog::SignVerifyMessageDialog(QWidget *parent) :
     model(0)
 {
     ui->setupUi(this);
-    setWindowFlags(Qt::CustomizeWindowHint | Qt::FramelessWindowHint | Qt::Window);
-    ui->wHeader->installEventFilter(new DialogMoveHandler(this));
-    ui->lbTitle->setText(tr("Signatures - Sign / Verify a Message"));
 
-#if (QT_VERSION >= 0x040700)
-    /* Do not move this to the XML file, Qt before 4.7 will choke on it */
-    ui->addressIn_SM->setPlaceholderText(tr("Enter a Blazecoin address (e.g. BU6tjT9keTxpKBixzwujsX9w9AKL6J6LJe)"));
+#if QT_VERSION >= 0x040700
     ui->signatureOut_SM->setPlaceholderText(tr("Click \"Sign Message\" to generate signature"));
-
-    ui->addressIn_VM->setPlaceholderText(tr("Enter a Blazecoin address (e.g. BU6tjT9keTxpKBixzwujsX9w9AKL6J6LJe)"));
-    ui->signatureIn_VM->setPlaceholderText(tr("Enter Blazecoin signature"));
 #endif
 
     GUIUtil::setupAddressWidget(ui->addressIn_SM, this);
@@ -48,8 +39,8 @@ SignVerifyMessageDialog::SignVerifyMessageDialog(QWidget *parent) :
     ui->messageIn_VM->installEventFilter(this);
     ui->signatureIn_VM->installEventFilter(this);
 
-    ui->signatureOut_SM->setFont(GUIUtil::blazecoinAddressFont());
-    ui->signatureIn_VM->setFont(GUIUtil::blazecoinAddressFont());
+    ui->signatureOut_SM->setFont(GUIUtil::bitcoinAddressFont());
+    ui->signatureIn_VM->setFont(GUIUtil::bitcoinAddressFont());
 }
 
 SignVerifyMessageDialog::~SignVerifyMessageDialog()
@@ -77,34 +68,23 @@ void SignVerifyMessageDialog::setAddress_VM(const QString &address)
 void SignVerifyMessageDialog::showTab_SM(bool fShow)
 {
     ui->tabWidget->setCurrentIndex(0);
-
     if (fShow)
-    {
-        // Center window (deleted)
-//        QRect scr = QApplication::desktop()->screenGeometry();
-//        move(scr.center() - rect().center());
         this->show();
-    }
 }
 
 void SignVerifyMessageDialog::showTab_VM(bool fShow)
 {
     ui->tabWidget->setCurrentIndex(1);
     if (fShow)
-    {
-        // Center window (deleted)
-//        QRect scr = QApplication::desktop()->screenGeometry();
-//        move(scr.center() - rect().center());
         this->show();
-    }
 }
 
 void SignVerifyMessageDialog::on_addressBookButton_SM_clicked()
 {
     if (model && model->getAddressTableModel())
     {
-        AddressBookPage dlg(AddressBookPage::ForSending, AddressBookPage::ReceivingTab, this);
-        dlg.setModel(model->getAddressTableModel(), true);
+        AddressBookPage dlg(AddressBookPage::ForSelection, AddressBookPage::ReceivingTab, this);
+        dlg.setModel(model->getAddressTableModel());
         if (dlg.exec())
         {
             setAddress_SM(dlg.getReturnValue());
@@ -119,14 +99,16 @@ void SignVerifyMessageDialog::on_pasteButton_SM_clicked()
 
 void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
 {
+    if (!model)
+        return;
+
     /* Clear old signature to ensure users don't get confused on error with an old signature displayed */
     ui->signatureOut_SM->clear();
 
-    CBlazecoinAddress addr(ui->addressIn_SM->text().toStdString());
+    CBitcoinAddress addr(ui->addressIn_SM->text().toStdString());
     if (!addr.IsValid())
     {
-        ui->addressIn_SM->setValid(false);
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_SM->setText(tr("The entered address is invalid.") + QString(" ") + tr("Please check the address and try again."));
         return;
     }
@@ -134,7 +116,7 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
     if (!addr.GetKeyID(keyID))
     {
         ui->addressIn_SM->setValid(false);
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_SM->setText(tr("The entered address does not refer to a key.") + QString(" ") + tr("Please check the address and try again."));
         return;
     }
@@ -142,7 +124,7 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
     WalletModel::UnlockContext ctx(model->requestUnlock());
     if (!ctx.isValid())
     {
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_SM->setText(tr("Wallet unlock was cancelled."));
         return;
     }
@@ -150,7 +132,7 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
     CKey key;
     if (!pwalletMain->GetKey(keyID, key))
     {
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_SM->setText(tr("Private key for the entered address is not available."));
         return;
     }
@@ -162,7 +144,7 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
     std::vector<unsigned char> vchSig;
     if (!key.SignCompact(Hash(ss.begin(), ss.end()), vchSig))
     {
-        ui->statusLabel_SM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_SM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_SM->setText(QString("<nobr>") + tr("Message signing failed.") + QString("</nobr>"));
         return;
     }
@@ -175,7 +157,7 @@ void SignVerifyMessageDialog::on_signMessageButton_SM_clicked()
 
 void SignVerifyMessageDialog::on_copySignatureButton_SM_clicked()
 {
-    QApplication::clipboard()->setText(ui->signatureOut_SM->text());
+    GUIUtil::setClipboard(ui->signatureOut_SM->text());
 }
 
 void SignVerifyMessageDialog::on_clearButton_SM_clicked()
@@ -192,8 +174,8 @@ void SignVerifyMessageDialog::on_addressBookButton_VM_clicked()
 {
     if (model && model->getAddressTableModel())
     {
-        AddressBookPage dlg(AddressBookPage::ForSending, AddressBookPage::SendingTab, this);
-        dlg.setModel(model->getAddressTableModel(), true);
+        AddressBookPage dlg(AddressBookPage::ForSelection, AddressBookPage::SendingTab, this);
+        dlg.setModel(model->getAddressTableModel());
         if (dlg.exec())
         {
             setAddress_VM(dlg.getReturnValue());
@@ -203,11 +185,10 @@ void SignVerifyMessageDialog::on_addressBookButton_VM_clicked()
 
 void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
 {
-    CBlazecoinAddress addr(ui->addressIn_VM->text().toStdString());
+    CBitcoinAddress addr(ui->addressIn_VM->text().toStdString());
     if (!addr.IsValid())
     {
-        ui->addressIn_VM->setValid(false);
-        ui->statusLabel_VM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_VM->setText(tr("The entered address is invalid.") + QString(" ") + tr("Please check the address and try again."));
         return;
     }
@@ -215,7 +196,7 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
     if (!addr.GetKeyID(keyID))
     {
         ui->addressIn_VM->setValid(false);
-        ui->statusLabel_VM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_VM->setText(tr("The entered address does not refer to a key.") + QString(" ") + tr("Please check the address and try again."));
         return;
     }
@@ -226,7 +207,7 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
     if (fInvalid)
     {
         ui->signatureIn_VM->setValid(false);
-        ui->statusLabel_VM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_VM->setText(tr("The signature could not be decoded.") + QString(" ") + tr("Please check the signature and try again."));
         return;
     }
@@ -239,14 +220,14 @@ void SignVerifyMessageDialog::on_verifyMessageButton_VM_clicked()
     if (!pubkey.RecoverCompact(Hash(ss.begin(), ss.end()), vchSig))
     {
         ui->signatureIn_VM->setValid(false);
-        ui->statusLabel_VM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_VM->setText(tr("The signature did not match the message digest.") + QString(" ") + tr("Please check the signature and try again."));
         return;
     }
 
-    if (!(CBlazecoinAddress(pubkey.GetID()) == addr))
+    if (!(CBitcoinAddress(pubkey.GetID()) == addr))
     {
-        ui->statusLabel_VM->setStyleSheet("QLabel { color: blue; }");
+        ui->statusLabel_VM->setStyleSheet("QLabel { color: red; }");
         ui->statusLabel_VM->setText(QString("<nobr>") + tr("Message verification failed.") + QString("</nobr>"));
         return;
     }

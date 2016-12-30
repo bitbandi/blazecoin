@@ -1,9 +1,5 @@
-Building Blazecoin
+Building Bitcoin
 
-See doc/readme-qt.rst for instructions on building Blazecoin-Qt,
-the intended-for-end-users, nice-graphical-interface, reference
-implementation of Blazecoin.
-
-See doc/build-*.txt for instructions on building blazecoind,
+See doc/build-*.md for instructions on building bitcoind,
 the intended-for-services, no-graphical-interface, reference
-implementation of Blazecoin.
+implementation of Bitcoin.
